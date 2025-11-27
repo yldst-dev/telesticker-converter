@@ -1,0 +1,5 @@
+{
+  "name": "TeleSticker Converter",
+  "description": "Convert images to high-quality Telegram-ready stickers (512px, WebP) under 512KB.",
+  "requestFramePermissions": []
+}
