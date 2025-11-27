@@ -145,7 +145,7 @@ export default function App() {
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             <a 
-              href="#"
+              href="https://github.com/yldst-dev/telesticker-converter"
               className="p-2 rounded-md hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
             >
               <Github className="w-5 h-5" />
