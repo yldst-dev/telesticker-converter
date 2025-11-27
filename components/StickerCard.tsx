@@ -73,7 +73,7 @@ const StickerCard: React.FC<StickerCardProps> = ({ item, onRemove }) => {
               </div>
               <div className="flex justify-between border-b border-border/50 pb-1">
                 <span className="opacity-70">Processed Size</span>
-                <span className={`font-medium ${isProcessed && item.sizeKB > 500 ? 'text-destructive' : 'text-primary'}`}>
+                <span className={`font-medium ${isProcessed && item.sizeKB > 350 ? 'text-destructive' : 'text-primary'}`}>
                   {isProcessed ? `${formatFileSize(item.processedBlob?.size || 0)}` : '-'}
                 </span>
               </div>

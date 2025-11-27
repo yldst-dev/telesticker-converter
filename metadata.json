@@ -1,5 +1,5 @@
 {
   "name": "TeleSticker Converter",
-  "description": "Convert images to high-quality Telegram-ready stickers (512px, PNG) in the 400-500KB window.",
+  "description": "Convert images to high-quality Telegram-ready stickers (512px, PNG) under 350KB.",
   "requestFramePermissions": []
 }

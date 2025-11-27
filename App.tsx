@@ -170,7 +170,7 @@ export default function App() {
           </h2>
           <p className="text-muted-foreground text-lg md:text-xl leading-relaxed">
             Convert your images to high-quality 512px PNG stickers. 
-            Dynamically tuned to stay between <span className="font-semibold text-foreground">400KB</span> and <span className="font-semibold text-foreground">500KB</span> without losing details.
+            Dynamically tuned to stay under <span className="font-semibold text-foreground">350KB</span> for Telegram.
           </p>
         </div>
 
