@@ -17,7 +17,7 @@ const StickerCard: React.FC<StickerCardProps> = ({ item, onRemove }) => {
     if (!item.processedUrl) return;
     const link = document.createElement('a');
     link.href = item.processedUrl;
-    link.download = `sticker_${item.originalFile.name.split('.')[0]}.webp`;
+    link.download = `sticker_${item.originalFile.name.split('.')[0]}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -73,7 +73,7 @@ const StickerCard: React.FC<StickerCardProps> = ({ item, onRemove }) => {
               </div>
               <div className="flex justify-between border-b border-border/50 pb-1">
                 <span className="opacity-70">Processed Size</span>
-                <span className={`font-medium ${isProcessed && item.sizeKB > 512 ? 'text-destructive' : 'text-primary'}`}>
+                <span className={`font-medium ${isProcessed && item.sizeKB > 500 ? 'text-destructive' : 'text-primary'}`}>
                   {isProcessed ? `${formatFileSize(item.processedBlob?.size || 0)}` : '-'}
                 </span>
               </div>
@@ -106,7 +106,7 @@ const StickerCard: React.FC<StickerCardProps> = ({ item, onRemove }) => {
               `}
             >
               <Download className="w-4 h-4" />
-              Download WebP
+              Download PNG
             </button>
           </div>
         </div>

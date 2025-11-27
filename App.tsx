@@ -63,7 +63,8 @@ export default function App() {
 
     } catch (error) {
       console.error("Processing failed", error);
-      setFiles(prev => prev.map(f => f.id === id ? { ...f, status: ProcessingStatus.ERROR, error: "Conversion failed" } : f));
+      const message = error instanceof Error ? error.message : "Conversion failed";
+      setFiles(prev => prev.map(f => f.id === id ? { ...f, status: ProcessingStatus.ERROR, error: message } : f));
     }
   };
 
@@ -93,7 +94,7 @@ export default function App() {
         const cleanName = originalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
         
         if (f.processedBlob) {
-          zip.file(`${cleanName}.webp`, f.processedBlob);
+          zip.file(`${cleanName}.png`, f.processedBlob);
         }
       });
 
@@ -168,8 +169,8 @@ export default function App() {
             <span className="text-primary bg-clip-text">Made Simple</span>
           </h2>
           <p className="text-muted-foreground text-lg md:text-xl leading-relaxed">
-            Convert your images to high-quality 512px WebP stickers. 
-            Optimized to fit perfectly under the <span className="font-semibold text-foreground">512KB</span> limit without losing details.
+            Convert your images to high-quality 512px PNG stickers. 
+            Dynamically tuned to stay between <span className="font-semibold text-foreground">400KB</span> and <span className="font-semibold text-foreground">500KB</span> without losing details.
           </p>
         </div>
 

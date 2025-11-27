@@ -1,23 +1,80 @@
 /**
  * Handles image resizing and format conversion for Telegram Stickers.
- * Rules:
- * - One side must be exactly 512px.
- * - The other side must be <= 512px.
- * - Format: WebP.
- * - Size: Must be strictly < 512KB. (We target 500KB for safety)
+ * Current rules (user request):
+ * - Convert to PNG instead of WebP.
+ * - Target size window: 400KB–500KB (must not exceed 500KB and should not be below 400KB).
+ * - Longest side starts at 512px; it may scale down if needed to satisfy the upper bound.
  */
 
-const MAX_FILE_SIZE = 500 * 1024; // 500 KB (Target limit)
-const HARD_LIMIT = 512 * 1024; // 512 KB (Telegram strict limit)
+const TARGET_MAX = 500 * 1024; // 500 KB upper bound
+const TARGET_MIN = 400 * 1024; // 400 KB lower bound
+const BASE_MAX_DIMENSION = 512; // Starting longest side
+const MIN_DIMENSION = 240; // Safeguard lower bound to avoid excessive downscaling
 
-const getCanvasBlob = (canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> => {
-  return new Promise((resolve) => {
-    canvas.toBlob(
-      (blob) => resolve(blob),
-      'image/webp',
-      Math.max(0.01, Math.min(1, quality)) // Ensure quality is between 0.01 and 1
-    );
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const getPngBlob = (sourceCanvas: HTMLCanvasElement): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    sourceCanvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to encode PNG'));
+        return;
+      }
+      resolve(blob);
+    }, 'image/png');
   });
+};
+
+const drawWithScaleAndNoise = (
+  image: HTMLImageElement,
+  baseWidth: number,
+  baseHeight: number,
+  scale: number,
+  noiseStrength: number
+): HTMLCanvasElement => {
+  const canvas = document.createElement('canvas');
+  const width = Math.max(MIN_DIMENSION, Math.round(baseWidth * scale));
+  const height = Math.max(MIN_DIMENSION, Math.round(baseHeight * scale));
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, width, height);
+
+  if (noiseStrength > 0) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    // Add subtle random noise to increase entropy and file size when PNG output is too small.
+    for (let i = 0; i < data.length; i += 4) {
+      const delta = (Math.random() * 2 - 1) * noiseStrength;
+      data[i] = clamp(data[i] + delta, 0, 255);     // R
+      data[i + 1] = clamp(data[i + 1] + delta, 0, 255); // G
+      data[i + 2] = clamp(data[i + 2] + delta, 0, 255); // B
+      // Alpha stays untouched
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  return canvas;
+};
+
+const generatePng = async (
+  image: HTMLImageElement,
+  baseWidth: number,
+  baseHeight: number,
+  scale: number,
+  noiseStrength: number
+) => {
+  const canvas = drawWithScaleAndNoise(image, baseWidth, baseHeight, scale, noiseStrength);
+  const blob = await getPngBlob(canvas);
+  return { blob, width: canvas.width, height: canvas.height };
 };
 
 export const processImageForSticker = (file: File): Promise<{ blob: Blob; width: number; height: number }> => {
@@ -27,94 +84,76 @@ export const processImageForSticker = (file: File): Promise<{ blob: Blob; width:
       const img = new Image();
       img.onload = async () => {
         try {
-          const canvas = document.createElement('canvas');
-          let { width, height } = img;
-
-          // Calculate new dimensions (Max 512px on longest side, keeping aspect ratio)
-          // Telegram rule: One side must be 512px, other side <= 512px.
-          if (width >= height) {
-            height = Math.round((height * 512) / width);
-            width = 512;
+          // Establish base dimensions (longest side = BASE_MAX_DIMENSION)
+          let baseWidth = img.width;
+          let baseHeight = img.height;
+          if (baseWidth >= baseHeight) {
+            baseHeight = Math.round((baseHeight * BASE_MAX_DIMENSION) / baseWidth);
+            baseWidth = BASE_MAX_DIMENSION;
           } else {
-            width = Math.round((width * 512) / height);
-            height = 512;
+            baseWidth = Math.round((baseWidth * BASE_MAX_DIMENSION) / baseHeight);
+            baseHeight = BASE_MAX_DIMENSION;
           }
 
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error("Could not get canvas context"));
+          // 1) Initial attempt: full size, no noise
+          let best = await generatePng(img, baseWidth, baseHeight, 1, 0);
+          if (best.blob.size >= TARGET_MIN && best.blob.size <= TARGET_MAX) {
+            resolve(best);
             return;
           }
 
-          // High quality scaling
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
+          // 2) Handle oversize: binary search on scale to get under TARGET_MAX
+          if (best.blob.size > TARGET_MAX) {
+            let low = Math.max(MIN_DIMENSION / BASE_MAX_DIMENSION, 0.35);
+            let high = 1;
+            let candidate = best;
 
-          // ---------------------------------------------------------
-          // BINARY SEARCH COMPRESSION STRATEGY
-          // Goal: Find the highest Quality (Q) such that Size(Q) <= 500KB.
-          // ---------------------------------------------------------
-          
-          // 1. Check Max Quality (1.0)
-          let bestBlob: Blob | null = null;
-          const maxQBlob = await getCanvasBlob(canvas, 1.0);
-          
-          if (maxQBlob && maxQBlob.size <= MAX_FILE_SIZE) {
-            // If it fits at 100% quality, just use it. 
-            // We cannot make it larger without artificially padding it, which is not useful.
-            resolve({ blob: maxQBlob, width, height });
+            for (let i = 0; i < 10; i++) {
+              const mid = (low + high) / 2;
+              const attempt = await generatePng(img, baseWidth, baseHeight, mid, 0);
+
+              if (attempt.blob.size > TARGET_MAX) {
+                high = mid;
+              } else {
+                candidate = attempt;
+                low = mid;
+              }
+            }
+
+            best = candidate;
+
+            // If we are still above the ceiling, fail fast.
+            if (best.blob.size > TARGET_MAX) {
+              reject(new Error('Unable to reduce PNG under 500KB. Try a simpler image.'));
+              return;
+            }
+          }
+
+          // 3) If too small, add controlled noise to raise size into the window
+          if (best.blob.size < TARGET_MIN) {
+            let padded: typeof best | null = null;
+            for (let noise = 2; noise <= 40; noise += 2) {
+              const attempt = await generatePng(img, baseWidth, baseHeight, 1, noise);
+              if (attempt.blob.size > TARGET_MAX) break;
+              padded = attempt;
+              if (attempt.blob.size >= TARGET_MIN) {
+                best = attempt;
+                break;
+              }
+            }
+
+            if (best.blob.size < TARGET_MIN && padded) {
+              // Use the largest we managed without breaching the ceiling
+              best = padded;
+            }
+          }
+
+          if (best.blob.size < TARGET_MIN) {
+            reject(new Error('Could not reach 400KB without breaking the 500KB cap.'));
             return;
           }
 
-          // 2. Binary Search for best fit
-          let minQ = 0.01;
-          let maxQ = 1.0;
-          let iterations = 0;
-
-          // We try to find the "sweet spot" where quality is maximized but size is <= MAX_FILE_SIZE
-          while (iterations < 12) { // 12 iterations gives precision of ~0.0002 which is plenty
-            const midQ = (minQ + maxQ) / 2;
-            const blob = await getCanvasBlob(canvas, midQ);
-
-            if (!blob) {
-               // Should not happen, but safe fallback to lower range
-               maxQ = midQ; 
-               continue;
-            }
-
-            if (blob.size <= MAX_FILE_SIZE) {
-               // This quality fits!
-               // Store it as a candidate, but try to see if we can go higher.
-               bestBlob = blob;
-               minQ = midQ; 
-            } else {
-               // Too big, we must reduce quality.
-               maxQ = midQ; 
-            }
-            
-            // Optimization: If the window is extremely small, stop.
-            if (maxQ - minQ < 0.005) break;
-            
-            iterations++;
-          }
-
-          // 3. Final Result Handling
-          if (bestBlob) {
-             resolve({ blob: bestBlob, width, height });
-          } else {
-             // Fallback: Try absolute minimum quality if search failed (extremely rare for 512px)
-             const minBlob = await getCanvasBlob(canvas, 0.01);
-             if (minBlob && minBlob.size <= HARD_LIMIT) {
-                resolve({ blob: minBlob, width, height });
-             } else {
-                reject(new Error("Image is too complex to fit 512KB even at lowest quality."));
-             }
-          }
-
+          resolve(best);
         } catch (err) {
           reject(err);
         }
