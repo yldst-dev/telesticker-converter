@@ -2,11 +2,11 @@
  * Handles image resizing and format conversion for Telegram Stickers.
  * Current rules (user request):
  * - Convert to PNG instead of WebP.
- * - Target size: must not exceed 350KB (Telegram sticker cap).
+ * - Target size: must not exceed 300KB (Telegram sticker cap).
  * - Longest side starts at 512px; it may scale down if needed to satisfy the upper bound.
  */
 
-const TARGET_MAX = 350 * 1024; // 350 KB upper bound
+const TARGET_MAX = 300 * 1024; // 300 KB upper bound
 const BASE_MAX_DIMENSION = 512; // Starting longest side
 const MIN_DIMENSION = 240; // Safeguard lower bound to avoid excessive downscaling
 
